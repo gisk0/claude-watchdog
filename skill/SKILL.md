@@ -55,6 +55,7 @@ Stored in `~/.openclaw/skills/anthropic-monitor/anthropic-monitor.env`:
 ```
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
+TELEGRAM_TOPIC_ID=
 OPENCLAW_GATEWAY_TOKEN=...
 OPENCLAW_GATEWAY_PORT=18789
 MONITOR_MODEL=sonnet
@@ -66,6 +67,7 @@ PROBE_AGENT_ID=main
 |----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | *(required)* | Telegram bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | *(required)* | Target chat for alerts |
+| `TELEGRAM_TOPIC_ID` | *(empty)* | Forum topic ID for alerts. Leave blank to post to the main/General chat. To find your topic ID: right-click a topic in Telegram → Copy Link → the number after the last `/` |
 | `OPENCLAW_GATEWAY_TOKEN` | *(required)* | Auth token for the local OpenClaw gateway |
 | `OPENCLAW_GATEWAY_PORT` | `18789` | Port the OpenClaw gateway listens on |
 | `MONITOR_MODEL` | `sonnet` | Model name to match in status incidents (e.g. "sonnet", "haiku") |

@@ -50,6 +50,7 @@ def load_config() -> dict:
     # Port has a default
     result["OPENCLAW_GATEWAY_PORT"] = result.get("OPENCLAW_GATEWAY_PORT") or "18789"
     # Optional config with defaults
+    result["TELEGRAM_TOPIC_ID"] = cfg.get("TELEGRAM_TOPIC_ID") or os.environ.get("TELEGRAM_TOPIC_ID") or ""
     result["PROBE_MODEL"] = cfg.get("PROBE_MODEL") or os.environ.get("PROBE_MODEL") or "openclaw"
     result["PROBE_AGENT_ID"] = cfg.get("PROBE_AGENT_ID") or os.environ.get("PROBE_AGENT_ID") or "main"
     for k in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "OPENCLAW_GATEWAY_TOKEN"]:
@@ -62,6 +63,7 @@ def load_config() -> dict:
 CONFIG = load_config()
 BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
+TOPIC_ID = CONFIG["TELEGRAM_TOPIC_ID"]
 GATEWAY_TOKEN = CONFIG["OPENCLAW_GATEWAY_TOKEN"]
 GATEWAY_PORT = CONFIG["OPENCLAW_GATEWAY_PORT"]
 GATEWAY_URL = f"http://127.0.0.1:{GATEWAY_PORT}/v1/chat/completions"
@@ -81,7 +83,10 @@ def log(msg: str):
 
 def send_telegram(msg: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = json.dumps({"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+    payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}
+    if TOPIC_ID:
+        payload["message_thread_id"] = int(TOPIC_ID)
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
