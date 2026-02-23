@@ -73,11 +73,17 @@ PROBE_AGENT_ID = CONFIG["PROBE_AGENT_ID"]
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
+def secure_open_append(path: Path):
+    """Open a file for appending with 0600 permissions."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    return os.fdopen(fd, "a")
+
+
 def log(msg: str):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line)
-    with open(LOG_FILE, "a") as f:
+    with secure_open_append(LOG_FILE) as f:
         f.write(line + "\n")
 
 
@@ -104,7 +110,8 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
-    with open(STATE_FILE, "w") as f:
+    fd = os.open(str(STATE_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(state, f, indent=2)
 
 

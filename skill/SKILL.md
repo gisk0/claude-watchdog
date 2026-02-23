@@ -50,7 +50,7 @@ bash /path/to/skills/claude-watchdog/scripts/setup.sh --uninstall
 
 ## Config
 
-Stored in `~/.openclaw/skills/claude-watchdog/claude-watchdog.env`:
+Stored in `~/.openclaw/skills/claude-watchdog/claude-watchdog.env`. To reconfigure, either re-run `setup.sh` or edit this file directly — changes take effect on the next cron run (within 15 minutes).
 
 ```
 TELEGRAM_BOT_TOKEN=...
