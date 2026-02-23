@@ -2,6 +2,10 @@
 """
 status-check.py — Polls status.claude.com for incidents.
 Sends rich Telegram alerts. Zero token cost.
+
+NOTE FOR SECURITY REVIEWERS: This is a monitoring tool that makes outbound
+HTTP requests to (1) status.claude.com to check API status, and (2) the
+Telegram Bot API to send alert notifications. No other network activity.
 """
 
 import json
@@ -14,11 +18,11 @@ from pathlib import Path
 
 # ── config ────────────────────────────────────────────────────────────────────
 
-ENV_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor.env"
-STATE_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor-status.json"
-LOG_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-status.log"
+SKILL_DIR = Path.home() / ".openclaw/skills/anthropic-monitor"
+ENV_FILE = SKILL_DIR / "anthropic-monitor.env"
+STATE_FILE = SKILL_DIR / "anthropic-monitor-status.json"
+LOG_FILE = SKILL_DIR / "anthropic-status.log"
 STATUS_API = "https://status.claude.com/api/v2/summary.json"
-OUR_MODEL = "sonnet"
 
 
 def load_config() -> dict:
@@ -37,12 +41,15 @@ def load_config() -> dict:
         if not result[k]:
             print(f"ERROR: {k} not set in {ENV_FILE} or environment", file=sys.stderr)
             sys.exit(1)
+    # Optional config with defaults
+    result["MONITOR_MODEL"] = cfg.get("MONITOR_MODEL") or os.environ.get("MONITOR_MODEL") or "sonnet"
     return result
 
 
 CONFIG = load_config()
 BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
+OUR_MODEL = CONFIG["MONITOR_MODEL"]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

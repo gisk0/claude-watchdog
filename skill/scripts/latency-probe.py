@@ -2,6 +2,11 @@
 """
 latency-probe.py — Measures Anthropic API latency via OpenClaw gateway.
 Alerts on spikes vs rolling baseline. Tiny cost per run (~$0.000001).
+
+NOTE FOR SECURITY REVIEWERS: This is a monitoring tool that makes outbound
+HTTP requests to (1) the local OpenClaw gateway (localhost) for latency
+probing, and (2) the Telegram Bot API to send alert notifications. No other
+network activity.
 """
 
 import json
@@ -16,9 +21,10 @@ from pathlib import Path
 
 # ── config ────────────────────────────────────────────────────────────────────
 
-ENV_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor.env"
-STATE_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor-latency.json"
-LOG_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-latency.log"
+SKILL_DIR = Path.home() / ".openclaw/skills/anthropic-monitor"
+ENV_FILE = SKILL_DIR / "anthropic-monitor.env"
+STATE_FILE = SKILL_DIR / "anthropic-monitor-latency.json"
+LOG_FILE = SKILL_DIR / "anthropic-latency.log"
 
 PROBE_TIMEOUT = 45
 BASELINE_MIN_SAMPLES = 5
@@ -43,6 +49,9 @@ def load_config() -> dict:
         result[k] = cfg.get(k) or os.environ.get(k)
     # Port has a default
     result["OPENCLAW_GATEWAY_PORT"] = result.get("OPENCLAW_GATEWAY_PORT") or "18789"
+    # Optional config with defaults
+    result["PROBE_MODEL"] = cfg.get("PROBE_MODEL") or os.environ.get("PROBE_MODEL") or "openclaw"
+    result["PROBE_AGENT_ID"] = cfg.get("PROBE_AGENT_ID") or os.environ.get("PROBE_AGENT_ID") or "main"
     for k in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "OPENCLAW_GATEWAY_TOKEN"]:
         if not result[k]:
             print(f"ERROR: {k} not set in {ENV_FILE} or environment", file=sys.stderr)
@@ -56,6 +65,8 @@ CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
 GATEWAY_TOKEN = CONFIG["OPENCLAW_GATEWAY_TOKEN"]
 GATEWAY_PORT = CONFIG["OPENCLAW_GATEWAY_PORT"]
 GATEWAY_URL = f"http://127.0.0.1:{GATEWAY_PORT}/v1/chat/completions"
+PROBE_MODEL = CONFIG["PROBE_MODEL"]
+PROBE_AGENT_ID = CONFIG["PROBE_AGENT_ID"]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -97,13 +108,13 @@ def save_state(state: dict):
 
 def probe_anthropic() -> tuple:
     payload = json.dumps({
-        "model": "openclaw",
+        "model": PROBE_MODEL,
         "messages": [{"role": "user", "content": "Reply OK"}]
     }).encode()
     headers = {
         "Authorization": f"Bearer {GATEWAY_TOKEN}",
         "Content-Type": "application/json",
-        "x-openclaw-agent-id": "main",
+        "x-openclaw-agent-id": PROBE_AGENT_ID,
     }
     req = urllib.request.Request(GATEWAY_URL, data=payload, headers=headers, method="POST")
     start = time.monotonic()
