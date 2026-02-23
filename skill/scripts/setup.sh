@@ -63,7 +63,14 @@ if [[ -z "$chat_id" ]]; then
     exit 1
 fi
 
-# 3. OpenClaw Gateway Token
+# 3. Telegram Topic ID (optional, for forum groups)
+echo ""
+echo "Telegram Topic ID (optional — for forum/topic groups only)."
+echo "Leave blank to send to the main/General chat."
+echo "To find your topic ID, right-click a topic → Copy Link → the number after the last '/'."
+read -rp "> " topic_id
+
+# 4. OpenClaw Gateway Token
 echo ""
 echo "OpenClaw Gateway Token (find with:"
 echo "  python3 -c \"from pathlib import Path; import json; print(json.load(open(Path.home() / '.openclaw/openclaw.json'))['gateway']['auth']['token'])\""
@@ -75,24 +82,24 @@ if [[ -z "$gw_token" ]]; then
     exit 1
 fi
 
-# 4. Gateway port (default 18789)
+# 5. Gateway port (default 18789)
 echo ""
 read -rp "OpenClaw Gateway Port [18789]: " gw_port
 gw_port="${gw_port:-18789}"
 
-# 5. Monitor model (default sonnet)
+# 6. Monitor model (default sonnet)
 echo ""
 read -rp "Model name to track in status incidents [sonnet]: " monitor_model
 monitor_model="${monitor_model:-sonnet}"
 
-# 6. Probe model (default openclaw)
+# 7. Probe model (default openclaw)
 echo ""
 echo "Probe model — the model alias sent to the OpenClaw gateway for latency"
 echo "probes. 'openclaw' uses the gateway's default routing."
 read -rp "Probe model [openclaw]: " probe_model
 probe_model="${probe_model:-openclaw}"
 
-# 7. Probe agent ID (default main)
+# 8. Probe agent ID (default main)
 echo ""
 read -rp "Probe agent ID (x-openclaw-agent-id header) [main]: " probe_agent_id
 probe_agent_id="${probe_agent_id:-main}"
@@ -102,6 +109,7 @@ mkdir -p "$SKILL_DATA_DIR"
 cat > "$ENV_FILE" <<EOF
 TELEGRAM_BOT_TOKEN=$bot_token
 TELEGRAM_CHAT_ID=$chat_id
+TELEGRAM_TOPIC_ID=${topic_id:-}
 OPENCLAW_GATEWAY_TOKEN=$gw_token
 OPENCLAW_GATEWAY_PORT=$gw_port
 MONITOR_MODEL=$monitor_model
@@ -112,7 +120,7 @@ chmod 600 "$ENV_FILE"
 echo ""
 echo "Config written to $ENV_FILE (permissions: 600)"
 
-# 8. Install cron jobs
+# 9. Install cron jobs
 STATUS_SCRIPT="$SKILL_DIR/scripts/status-check.py"
 LATENCY_SCRIPT="$SKILL_DIR/scripts/latency-probe.py"
 
@@ -127,7 +135,7 @@ rm -f /tmp/crontab-clean
 
 echo "Cron jobs installed (every 15 minutes, using $PYTHON3)."
 
-# 9. Run initial status check
+# 10. Run initial status check
 echo ""
 echo "Running initial status check..."
 if "$PYTHON3" "$STATUS_SCRIPT"; then
