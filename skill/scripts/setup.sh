@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# setup.sh — Interactive setup for anthropic-monitor skill
+# setup.sh — Interactive setup for claude-watchdog skill
 
-SKILL_DATA_DIR="$HOME/.openclaw/skills/anthropic-monitor"
-ENV_FILE="$SKILL_DATA_DIR/anthropic-monitor.env"
+SKILL_DATA_DIR="$HOME/.openclaw/skills/claude-watchdog"
+ENV_FILE="$SKILL_DATA_DIR/claude-watchdog.env"
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON3="$(command -v python3)"
 
@@ -15,8 +15,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     echo ""
 
     # Remove cron jobs
-    if crontab -l 2>/dev/null | grep -q 'anthropic-monitor'; then
-        crontab -l 2>/dev/null | grep -v 'anthropic-monitor' | crontab -
+    if crontab -l 2>/dev/null | grep -q 'claude-watchdog'; then
+        crontab -l 2>/dev/null | grep -v 'claude-watchdog' | crontab -
         echo "✓ Cron jobs removed."
     else
         echo "No cron jobs found."
@@ -125,11 +125,11 @@ STATUS_SCRIPT="$SKILL_DIR/scripts/status-check.py"
 LATENCY_SCRIPT="$SKILL_DIR/scripts/latency-probe.py"
 
 # Remove old entries if any
-crontab -l 2>/dev/null | grep -v 'anthropic-monitor' | grep -v 'status-check\.py' | grep -v 'latency-probe\.py' > /tmp/crontab-clean || true
+crontab -l 2>/dev/null | grep -v 'claude-watchdog' | grep -v 'status-check\.py' | grep -v 'latency-probe\.py' > /tmp/crontab-clean || true
 {
     cat /tmp/crontab-clean
-    echo "*/15 * * * * $PYTHON3 $STATUS_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
-    echo "*/15 * * * * $PYTHON3 $LATENCY_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
+    echo "*/15 * * * * $PYTHON3 $STATUS_SCRIPT >> /dev/null 2>&1 # claude-watchdog"
+    echo "*/15 * * * * $PYTHON3 $LATENCY_SCRIPT >> /dev/null 2>&1 # claude-watchdog"
 } | crontab -
 rm -f /tmp/crontab-clean
 

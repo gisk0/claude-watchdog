@@ -1,4 +1,4 @@
-# anthropic-monitor-skill
+# Claude Watchdog 🐕
 
 OpenClaw skill that monitors Anthropic/Claude API health and notifies via Telegram.
 
@@ -10,7 +10,7 @@ OpenClaw skill that monitors Anthropic/Claude API health and notifies via Telegr
 ## Install
 
 ```bash
-clawhub install anthropic-monitor
+clawhub install claude-watchdog
 ```
 
 Or install the `.skill` file manually via OpenClaw.

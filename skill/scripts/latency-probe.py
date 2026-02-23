@@ -21,9 +21,9 @@ from pathlib import Path
 
 # ── config ────────────────────────────────────────────────────────────────────
 
-SKILL_DIR = Path.home() / ".openclaw/skills/anthropic-monitor"
-ENV_FILE = SKILL_DIR / "anthropic-monitor.env"
-STATE_FILE = SKILL_DIR / "anthropic-monitor-latency.json"
+SKILL_DIR = Path.home() / ".openclaw/skills/claude-watchdog"
+ENV_FILE = SKILL_DIR / "claude-watchdog.env"
+STATE_FILE = SKILL_DIR / "claude-watchdog-latency.json"
 LOG_FILE = SKILL_DIR / "anthropic-latency.log"
 
 PROBE_TIMEOUT = 45

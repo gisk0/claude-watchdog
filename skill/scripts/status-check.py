@@ -18,9 +18,9 @@ from pathlib import Path
 
 # ── config ────────────────────────────────────────────────────────────────────
 
-SKILL_DIR = Path.home() / ".openclaw/skills/anthropic-monitor"
-ENV_FILE = SKILL_DIR / "anthropic-monitor.env"
-STATE_FILE = SKILL_DIR / "anthropic-monitor-status.json"
+SKILL_DIR = Path.home() / ".openclaw/skills/claude-watchdog"
+ENV_FILE = SKILL_DIR / "claude-watchdog.env"
+STATE_FILE = SKILL_DIR / "claude-watchdog-status.json"
 LOG_FILE = SKILL_DIR / "anthropic-status.log"
 STATUS_API = "https://status.claude.com/api/v2/summary.json"
 
@@ -154,7 +154,7 @@ def format_incident_alert(incidents, components, indicator, description):
 
 def main():
     try:
-        req = urllib.request.Request(STATUS_API, headers={"User-Agent": "anthropic-monitor/1.0"})
+        req = urllib.request.Request(STATUS_API, headers={"User-Agent": "claude-watchdog/1.1"})
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read())
     except Exception as e:

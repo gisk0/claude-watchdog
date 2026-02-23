@@ -1,9 +1,9 @@
 ---
-name: anthropic-monitor
-description: Monitor Anthropic/Claude API for outages and latency spikes with rich Telegram alerts. Set up API monitoring, status alerts, and latency probes.
+name: claude-watchdog
+description: Monitor the Claude API for outages and latency spikes with rich Telegram alerts. Status monitoring, latency probes, and automatic recovery notifications.
 ---
 
-# Anthropic Monitor
+# Claude Watchdog 🐕
 
 Monitor the Anthropic/Claude API for outages and latency spikes. Sends rich alerts to Telegram — no agent tokens consumed for status checks.
 
@@ -29,7 +29,7 @@ Monitor the Anthropic/Claude API for outages and latency spikes. Sends rich aler
 Run the interactive setup script:
 
 ```bash
-bash /path/to/skills/anthropic-monitor/scripts/setup.sh
+bash /path/to/skills/claude-watchdog/scripts/setup.sh
 ```
 
 You'll need:
@@ -45,12 +45,12 @@ The setup script writes config, installs cron jobs, and runs an initial check.
 
 To uninstall (removes cron jobs, optionally config/state):
 ```bash
-bash /path/to/skills/anthropic-monitor/scripts/setup.sh --uninstall
+bash /path/to/skills/claude-watchdog/scripts/setup.sh --uninstall
 ```
 
 ## Config
 
-Stored in `~/.openclaw/skills/anthropic-monitor/anthropic-monitor.env`:
+Stored in `~/.openclaw/skills/claude-watchdog/claude-watchdog.env`:
 
 ```
 TELEGRAM_BOT_TOKEN=...
@@ -79,7 +79,7 @@ Scripts also accept these as environment variables (env file takes priority).
 The env file contains sensitive tokens (Telegram bot token, gateway token). The setup script sets permissions to `600` (owner-only read/write). If you create or edit the file manually, ensure restricted permissions:
 
 ```bash
-chmod 600 ~/.openclaw/skills/anthropic-monitor/anthropic-monitor.env
+chmod 600 ~/.openclaw/skills/claude-watchdog/claude-watchdog.env
 ```
 
 ## Alert Examples
@@ -120,12 +120,12 @@ Was: 12.3s when alert fired
 
 ## State & Logs
 
-All state and log files are stored in `~/.openclaw/skills/anthropic-monitor/`:
+All state and log files are stored in `~/.openclaw/skills/claude-watchdog/`:
 
 | File | Purpose |
 |------|---------|
-| `anthropic-monitor-status.json` | Status check state |
-| `anthropic-monitor-latency.json` | Latency probe state & samples |
+| `claude-watchdog-status.json` | Status check state |
+| `claude-watchdog-latency.json` | Latency probe state & samples |
 | `anthropic-status.log` | Status check log |
 | `anthropic-latency.log` | Latency probe log |
 
