@@ -3,8 +3,43 @@ set -euo pipefail
 
 # setup.sh — Interactive setup for anthropic-monitor skill
 
-ENV_FILE="$HOME/.openclaw/workspace/memory/anthropic-monitor.env"
+SKILL_DATA_DIR="$HOME/.openclaw/skills/anthropic-monitor"
+ENV_FILE="$SKILL_DATA_DIR/anthropic-monitor.env"
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON3="$(which python3)"
+
+# ── uninstall ─────────────────────────────────────────────────────────────────
+
+if [[ "${1:-}" == "--uninstall" ]]; then
+    echo "=== Anthropic Monitor — Uninstall ==="
+    echo ""
+
+    # Remove cron jobs
+    if crontab -l 2>/dev/null | grep -q 'anthropic-monitor'; then
+        crontab -l 2>/dev/null | grep -v 'anthropic-monitor' | crontab -
+        echo "✓ Cron jobs removed."
+    else
+        echo "No cron jobs found."
+    fi
+
+    # Optionally remove config/state
+    if [[ -d "$SKILL_DATA_DIR" ]]; then
+        echo ""
+        read -rp "Also remove config and state files in $SKILL_DATA_DIR? [y/N]: " remove_data
+        if [[ "${remove_data,,}" == "y" ]]; then
+            rm -rf "$SKILL_DATA_DIR"
+            echo "✓ Config and state files removed."
+        else
+            echo "Config and state files kept."
+        fi
+    fi
+
+    echo ""
+    echo "=== Uninstall complete ==="
+    exit 0
+fi
+
+# ── setup ─────────────────────────────────────────────────────────────────────
 
 echo "=== Anthropic Monitor — Setup ==="
 echo ""
@@ -30,7 +65,7 @@ fi
 # 3. OpenClaw Gateway Token
 echo ""
 echo "OpenClaw Gateway Token (find with:"
-echo "  python3 -c \"import json; print(json.load(open('$HOME/.openclaw/openclaw.json'))['gateway']['auth']['token'])\""
+echo "  python3 -c \"from pathlib import Path; import json; print(json.load(open(Path.home() / '.openclaw/openclaw.json'))['gateway']['auth']['token'])\""
 echo "):"
 read -rp "> " gw_token
 if [[ -z "$gw_token" ]]; then
@@ -43,18 +78,39 @@ echo ""
 read -rp "OpenClaw Gateway Port [18789]: " gw_port
 gw_port="${gw_port:-18789}"
 
+# 5. Monitor model (default sonnet)
+echo ""
+read -rp "Model name to track in status incidents [sonnet]: " monitor_model
+monitor_model="${monitor_model:-sonnet}"
+
+# 6. Probe model (default openclaw)
+echo ""
+echo "Probe model — the model alias sent to the OpenClaw gateway for latency"
+echo "probes. 'openclaw' uses the gateway's default routing."
+read -rp "Probe model [openclaw]: " probe_model
+probe_model="${probe_model:-openclaw}"
+
+# 7. Probe agent ID (default main)
+echo ""
+read -rp "Probe agent ID (x-openclaw-agent-id header) [main]: " probe_agent_id
+probe_agent_id="${probe_agent_id:-main}"
+
 # Write env file
-mkdir -p "$(dirname "$ENV_FILE")"
+mkdir -p "$SKILL_DATA_DIR"
 cat > "$ENV_FILE" <<EOF
 TELEGRAM_BOT_TOKEN=$bot_token
 TELEGRAM_CHAT_ID=$chat_id
 OPENCLAW_GATEWAY_TOKEN=$gw_token
 OPENCLAW_GATEWAY_PORT=$gw_port
+MONITOR_MODEL=$monitor_model
+PROBE_MODEL=$probe_model
+PROBE_AGENT_ID=$probe_agent_id
 EOF
+chmod 600 "$ENV_FILE"
 echo ""
-echo "Config written to $ENV_FILE"
+echo "Config written to $ENV_FILE (permissions: 600)"
 
-# 5. Install cron jobs
+# 8. Install cron jobs
 STATUS_SCRIPT="$SKILL_DIR/scripts/status-check.py"
 LATENCY_SCRIPT="$SKILL_DIR/scripts/latency-probe.py"
 
@@ -62,17 +118,17 @@ LATENCY_SCRIPT="$SKILL_DIR/scripts/latency-probe.py"
 crontab -l 2>/dev/null | grep -v 'anthropic-monitor' | grep -v 'status-check\.py' | grep -v 'latency-probe\.py' > /tmp/crontab-clean || true
 {
     cat /tmp/crontab-clean
-    echo "*/15 * * * * /usr/bin/python3 $STATUS_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
-    echo "*/15 * * * * /usr/bin/python3 $LATENCY_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
+    echo "*/15 * * * * $PYTHON3 $STATUS_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
+    echo "*/15 * * * * $PYTHON3 $LATENCY_SCRIPT >> /dev/null 2>&1 # anthropic-monitor"
 } | crontab -
 rm -f /tmp/crontab-clean
 
-echo "Cron jobs installed (every 15 minutes)."
+echo "Cron jobs installed (every 15 minutes, using $PYTHON3)."
 
-# 6. Run initial status check
+# 9. Run initial status check
 echo ""
 echo "Running initial status check..."
-if /usr/bin/python3 "$STATUS_SCRIPT"; then
+if "$PYTHON3" "$STATUS_SCRIPT"; then
     echo "✓ Status check passed."
 else
     echo "✗ Status check failed — check config." >&2
@@ -82,5 +138,7 @@ fi
 echo ""
 echo "=== Setup complete ==="
 echo "Alerts will be sent to Telegram chat $chat_id."
-echo "State files: ~/.openclaw/workspace/memory/anthropic-monitor-*.json"
-echo "Logs: ~/.openclaw/workspace/memory/anthropic-*.log"
+echo "State files: $SKILL_DATA_DIR/"
+echo "Logs: $SKILL_DATA_DIR/"
+echo ""
+echo "To uninstall: bash $0 --uninstall"

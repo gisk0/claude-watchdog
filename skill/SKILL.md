@@ -35,23 +35,52 @@ bash /path/to/skills/anthropic-monitor/scripts/setup.sh
 You'll need:
 1. **Telegram Bot Token** — from [@BotFather](https://t.me/BotFather)
 2. **Telegram Chat ID** — send a message to your bot, then check `https://api.telegram.org/bot<TOKEN>/getUpdates`
-3. **OpenClaw Gateway Token** — run: `python3 -c "import json; print(json.load(open('~/.openclaw/openclaw.json'))['gateway']['auth']['token'])"`
+3. **OpenClaw Gateway Token** — run:
+   ```bash
+   python3 -c "from pathlib import Path; import json; print(json.load(open(Path.home() / '.openclaw/openclaw.json'))['gateway']['auth']['token'])"
+   ```
 4. **Gateway Port** — default `18789`
 
 The setup script writes config, installs cron jobs, and runs an initial check.
 
+To uninstall (removes cron jobs, optionally config/state):
+```bash
+bash /path/to/skills/anthropic-monitor/scripts/setup.sh --uninstall
+```
+
 ## Config
 
-Stored in `~/.openclaw/workspace/memory/anthropic-monitor.env`:
+Stored in `~/.openclaw/skills/anthropic-monitor/anthropic-monitor.env`:
 
 ```
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 OPENCLAW_GATEWAY_TOKEN=...
 OPENCLAW_GATEWAY_PORT=18789
+MONITOR_MODEL=sonnet
+PROBE_MODEL=openclaw
+PROBE_AGENT_ID=main
 ```
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | *(required)* | Telegram bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | *(required)* | Target chat for alerts |
+| `OPENCLAW_GATEWAY_TOKEN` | *(required)* | Auth token for the local OpenClaw gateway |
+| `OPENCLAW_GATEWAY_PORT` | `18789` | Port the OpenClaw gateway listens on |
+| `MONITOR_MODEL` | `sonnet` | Model name to match in status incidents (e.g. "sonnet", "haiku") |
+| `PROBE_MODEL` | `openclaw` | Model alias sent to the gateway for latency probes. `openclaw` uses the gateway's default model routing |
+| `PROBE_AGENT_ID` | `main` | Value of the `x-openclaw-agent-id` header sent with probes |
+
 Scripts also accept these as environment variables (env file takes priority).
+
+### Security Note
+
+The env file contains sensitive tokens (Telegram bot token, gateway token). The setup script sets permissions to `600` (owner-only read/write). If you create or edit the file manually, ensure restricted permissions:
+
+```bash
+chmod 600 ~/.openclaw/skills/anthropic-monitor/anthropic-monitor.env
+```
 
 ## Alert Examples
 
@@ -91,12 +120,14 @@ Was: 12.3s when alert fired
 
 ## State & Logs
 
+All state and log files are stored in `~/.openclaw/skills/anthropic-monitor/`:
+
 | File | Purpose |
 |------|---------|
-| `~/.openclaw/workspace/memory/anthropic-monitor-status.json` | Status check state |
-| `~/.openclaw/workspace/memory/anthropic-monitor-latency.json` | Latency probe state & samples |
-| `~/.openclaw/workspace/memory/anthropic-status.log` | Status check log |
-| `~/.openclaw/workspace/memory/anthropic-latency.log` | Latency probe log |
+| `anthropic-monitor-status.json` | Status check state |
+| `anthropic-monitor-latency.json` | Latency probe state & samples |
+| `anthropic-status.log` | Status check log |
+| `anthropic-latency.log` | Latency probe log |
 
 ## Tuning Thresholds
 
