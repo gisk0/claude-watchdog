@@ -42,6 +42,7 @@ def load_config() -> dict:
             print(f"ERROR: {k} not set in {ENV_FILE} or environment", file=sys.stderr)
             sys.exit(1)
     # Optional config with defaults
+    result["TELEGRAM_TOPIC_ID"] = cfg.get("TELEGRAM_TOPIC_ID") or os.environ.get("TELEGRAM_TOPIC_ID") or ""
     result["MONITOR_MODEL"] = cfg.get("MONITOR_MODEL") or os.environ.get("MONITOR_MODEL") or "sonnet"
     return result
 
@@ -49,6 +50,7 @@ def load_config() -> dict:
 CONFIG = load_config()
 BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
+TOPIC_ID = CONFIG["TELEGRAM_TOPIC_ID"]
 OUR_MODEL = CONFIG["MONITOR_MODEL"]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -64,7 +66,10 @@ def log(msg: str):
 
 def send_telegram(msg: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = json.dumps({"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+    payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}
+    if TOPIC_ID:
+        payload["message_thread_id"] = int(TOPIC_ID)
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
