@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""
+latency-probe.py — Measures Anthropic API latency via OpenClaw gateway.
+Alerts on spikes vs rolling baseline. Tiny cost per run (~$0.000001).
+"""
+
+import json
+import os
+import statistics
+import sys
+import time
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ── config ────────────────────────────────────────────────────────────────────
+
+ENV_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor.env"
+STATE_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor-latency.json"
+LOG_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-latency.log"
+
+PROBE_TIMEOUT = 45
+BASELINE_MIN_SAMPLES = 5
+BASELINE_WINDOW = 20
+ALERT_MULTIPLIER = 2.5
+ALERT_HARD_FLOOR = 10.0
+RECOVER_MULTIPLIER = 1.5
+
+
+def load_config() -> dict:
+    """Load config from env file, falling back to environment variables."""
+    cfg = {}
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip()
+    keys = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_GATEWAY_PORT"]
+    result = {}
+    for k in keys:
+        result[k] = cfg.get(k) or os.environ.get(k)
+    # Port has a default
+    result["OPENCLAW_GATEWAY_PORT"] = result.get("OPENCLAW_GATEWAY_PORT") or "18789"
+    for k in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "OPENCLAW_GATEWAY_TOKEN"]:
+        if not result[k]:
+            print(f"ERROR: {k} not set in {ENV_FILE} or environment", file=sys.stderr)
+            sys.exit(1)
+    return result
+
+
+CONFIG = load_config()
+BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
+CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
+GATEWAY_TOKEN = CONFIG["OPENCLAW_GATEWAY_TOKEN"]
+GATEWAY_PORT = CONFIG["OPENCLAW_GATEWAY_PORT"]
+GATEWAY_URL = f"http://127.0.0.1:{GATEWAY_PORT}/v1/chat/completions"
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def log(msg: str):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)
+    with open(LOG_FILE, "a") as f:
+        f.write(line + "\n")
+
+
+def send_telegram(msg: str):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    data = json.dumps({"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            r.read()
+    except Exception as e:
+        log(f"Telegram send failed: {e}")
+
+
+def load_state() -> dict:
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"samples": [], "alerted": False, "alert_latency": None}
+
+
+def save_state(state: dict):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+# ── probe ─────────────────────────────────────────────────────────────────────
+
+
+def probe_anthropic() -> tuple:
+    payload = json.dumps({
+        "model": "openclaw",
+        "messages": [{"role": "user", "content": "Reply OK"}]
+    }).encode()
+    headers = {
+        "Authorization": f"Bearer {GATEWAY_TOKEN}",
+        "Content-Type": "application/json",
+        "x-openclaw-agent-id": "main",
+    }
+    req = urllib.request.Request(GATEWAY_URL, data=payload, headers=headers, method="POST")
+    start = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
+            resp.read()
+            latency = time.monotonic() - start
+            return (latency, "ok") if resp.status == 200 else (latency, f"http_{resp.status}")
+    except TimeoutError:
+        return None, "timeout"
+    except urllib.error.HTTPError as e:
+        return time.monotonic() - start, f"http_{e.code}"
+    except Exception as e:
+        return None, f"error: {e}"
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+
+def main():
+    state = load_state()
+    samples = state.get("samples", [])
+    alerted = state.get("alerted", False)
+    alert_latency = state.get("alert_latency")
+
+    latency, status = probe_anthropic()
+
+    if latency is None:
+        if status == "timeout":
+            log(f"TIMEOUT after {PROBE_TIMEOUT}s")
+            if not alerted:
+                send_telegram(
+                    f"⏱️ <b>Anthropic API — Not Responding</b>\n\n"
+                    f"Probe timed out after {PROBE_TIMEOUT}s. API may be down or severely degraded."
+                )
+                state["alerted"] = True
+                state["alert_latency"] = PROBE_TIMEOUT
+        else:
+            log(f"PROBE ERROR: {status}")
+        save_state(state)
+        return
+
+    log(f"probe={latency:.2f}s status={status} samples={len(samples)}")
+
+    if status == "ok":
+        samples.append(round(latency, 3))
+        samples = samples[-BASELINE_WINDOW:]
+        state["samples"] = samples
+
+    if len(samples) < BASELINE_MIN_SAMPLES:
+        log(f"Building baseline ({len(samples)}/{BASELINE_MIN_SAMPLES} samples)")
+        save_state(state)
+        return
+
+    baseline = statistics.median(samples[:-1] if len(samples) > 1 else samples)
+    threshold = max(baseline * ALERT_MULTIPLIER, ALERT_HARD_FLOOR)
+    recover_threshold = baseline * RECOVER_MULTIPLIER
+
+    log(f"baseline_median={baseline:.2f}s threshold={threshold:.2f}s alerted={alerted}")
+
+    if latency > threshold and status == "ok" and not alerted:
+        ratio = latency / baseline
+        if ratio > 5 or latency > 20:
+            icon = "🔴"
+        elif ratio > 3 or latency > 15:
+            icon = "🟠"
+        else:
+            icon = "🟡"
+        msg = (
+            f"{icon} <b>Anthropic API — High Latency Detected</b>\n\n"
+            f"Current: <b>{latency:.1f}s</b>\n"
+            f"Baseline: {baseline:.1f}s (median of last {len(samples)-1} samples)\n"
+            f"Ratio: {ratio:.1f}×\n\n"
+            f"Slow responses are expected right now."
+        )
+        send_telegram(msg)
+        state["alerted"] = True
+        state["alert_latency"] = round(latency, 2)
+        log(f"ALERT sent: {latency:.2f}s vs baseline {baseline:.2f}s ({ratio:.1f}×)")
+
+    elif alerted and latency < recover_threshold:
+        msg = (
+            f"✅ <b>Anthropic API — Latency Back to Normal</b>\n\n"
+            f"Current: <b>{latency:.1f}s</b>\n"
+            f"Baseline: {baseline:.1f}s\n"
+            f"Was: {alert_latency:.1f}s when alert fired"
+        )
+        send_telegram(msg)
+        state["alerted"] = False
+        state["alert_latency"] = None
+        log(f"RECOVERY: {latency:.2f}s back below {recover_threshold:.2f}s")
+
+    state["last_check"] = datetime.now(timezone.utc).isoformat()
+    state["last_latency"] = round(latency, 3)
+    state["baseline_median"] = round(baseline, 3)
+    save_state(state)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""
+status-check.py — Polls status.claude.com for incidents.
+Sends rich Telegram alerts. Zero token cost.
+"""
+
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ── config ────────────────────────────────────────────────────────────────────
+
+ENV_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor.env"
+STATE_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-monitor-status.json"
+LOG_FILE = Path.home() / ".openclaw/workspace/memory/anthropic-status.log"
+STATUS_API = "https://status.claude.com/api/v2/summary.json"
+OUR_MODEL = "sonnet"
+
+
+def load_config() -> dict:
+    """Load config from env file, falling back to environment variables."""
+    cfg = {}
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip()
+    keys = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+    result = {}
+    for k in keys:
+        result[k] = cfg.get(k) or os.environ.get(k)
+        if not result[k]:
+            print(f"ERROR: {k} not set in {ENV_FILE} or environment", file=sys.stderr)
+            sys.exit(1)
+    return result
+
+
+CONFIG = load_config()
+BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
+CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def log(msg: str):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)
+    with open(LOG_FILE, "a") as f:
+        f.write(line + "\n")
+
+
+def send_telegram(msg: str):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    data = json.dumps({"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            r.read()
+    except Exception as e:
+        log(f"Telegram send failed: {e}")
+
+
+def load_state() -> dict:
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"indicator": "none", "incident_ids": [], "alerted": False}
+
+
+def save_state(state: dict):
+    state["last_check"] = datetime.now(timezone.utc).isoformat()
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def status_emoji(status: str) -> str:
+    return {"operational": "🟢", "degraded_performance": "🟡",
+            "partial_outage": "🟠", "major_outage": "🔴"}.get(status, "⚪")
+
+
+def status_label(status: str) -> str:
+    return {"operational": "operational", "degraded_performance": "degraded",
+            "partial_outage": "partial outage", "major_outage": "major outage"}.get(status, status)
+
+
+def incident_affects_us(name: str):
+    name_lower = name.lower()
+    if OUR_MODEL in name_lower:
+        return True
+    for m in ["haiku", "opus"]:
+        if m in name_lower:
+            return False
+    return None
+
+
+def format_incident_alert(incidents, components, indicator, description):
+    icon = {"minor": "🟡", "major": "🟠", "critical": "🔴"}.get(indicator, "⚠️")
+    lines = [f"{icon} <b>Anthropic Status: {description}</b>\n"]
+
+    for inc in incidents:
+        name = inc.get("name", "Unknown incident")
+        status = inc.get("status", "unknown").capitalize()
+        updates = inc.get("incident_updates", [])
+        latest_body = updates[0].get("body", "") if updates else ""
+
+        affects = incident_affects_us(name)
+        if affects is False:
+            tag = " <i>(not our model)</i>"
+        elif affects is True:
+            tag = " <i>(⚠️ affects us)</i>"
+        else:
+            tag = ""
+
+        lines.append(f"📌 <b>{name}</b>{tag}")
+        lines.append(f"Status: {status}")
+        if latest_body:
+            lines.append(f'Update: "{latest_body}"')
+        lines.append("")
+
+    degraded = [c for c in components if c.get("status") != "operational"]
+    if degraded:
+        lines.append("Components:")
+        for c in degraded:
+            e = status_emoji(c["status"])
+            lbl = status_label(c["status"])
+            lines.append(f"  {e} {c['name']}: {lbl}")
+        lines.append("")
+
+    lines.append("🔗 https://status.claude.com")
+    return "\n".join(lines)
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+
+def main():
+    try:
+        req = urllib.request.Request(STATUS_API, headers={"User-Agent": "anthropic-monitor/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+    except Exception as e:
+        log(f"ERROR fetching status: {e}")
+        return
+
+    indicator = data["status"]["indicator"]
+    description = data["status"]["description"]
+    components = data.get("components", [])
+    incidents = data.get("incidents", [])
+    incident_ids = sorted(i["id"] for i in incidents)
+
+    state = load_state()
+    prev_indicator = state.get("indicator", "none")
+    prev_incident_ids = sorted(state.get("incident_ids", []))
+    alerted = state.get("alerted", False)
+
+    changed = (indicator != prev_indicator) or (incident_ids != prev_incident_ids)
+
+    if changed:
+        if indicator == "none" and not incidents:
+            if alerted:
+                log("RECOVERY: All systems operational")
+                send_telegram("✅ <b>Anthropic — All Systems Operational</b>\n\nIncident resolved. We're back to normal.")
+            state["alerted"] = False
+        else:
+            log(f"INCIDENT [{indicator}]: {description} | incidents: {[i['name'] for i in incidents]}")
+            msg = format_incident_alert(incidents, components, indicator, description)
+            send_telegram(msg)
+            state["alerted"] = True
+
+    state["indicator"] = indicator
+    state["incident_ids"] = incident_ids
+    log(f"OK: indicator={indicator} incidents={len(incidents)} changed={changed}")
+    save_state(state)
+
+
+if __name__ == "__main__":
+    main()
