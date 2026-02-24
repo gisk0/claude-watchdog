@@ -44,6 +44,10 @@ def load_config() -> dict:
     # Optional config with defaults
     result["TELEGRAM_TOPIC_ID"] = cfg.get("TELEGRAM_TOPIC_ID") or os.environ.get("TELEGRAM_TOPIC_ID") or ""
     result["MONITOR_MODEL"] = cfg.get("MONITOR_MODEL") or os.environ.get("MONITOR_MODEL") or "sonnet"
+    # Comma-separated list of keywords to filter out (e.g. "skills,Artifacts,Memory")
+    # Leave empty to receive all alerts
+    filter_str = cfg.get("FILTER_KEYWORDS") or os.environ.get("FILTER_KEYWORDS") or ""
+    result["FILTER_KEYWORDS"] = [k.strip() for k in filter_str.split(",") if k.strip()] if filter_str else []
     return result
 
 
@@ -52,6 +56,7 @@ BOT_TOKEN = CONFIG["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = CONFIG["TELEGRAM_CHAT_ID"]
 TOPIC_ID = CONFIG["TELEGRAM_TOPIC_ID"]
 OUR_MODEL = CONFIG["MONITOR_MODEL"]
+FILTER_KEYWORDS = CONFIG["FILTER_KEYWORDS"]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,6 +124,14 @@ def incident_affects_us(name: str):
     return None
 
 
+def incident_filtered(name: str) -> bool:
+    """Check if incident should be filtered out based on FILTER_KEYWORDS."""
+    if not FILTER_KEYWORDS:
+        return False
+    name_lower = name.lower()
+    return any(kw.lower() in name_lower for kw in FILTER_KEYWORDS)
+
+
 def format_incident_alert(incidents, components, indicator, description):
     icon = {"minor": "🟡", "major": "🟠", "critical": "🔴"}.get(indicator, "⚠️")
     lines = [f"{icon} <b>Anthropic Status: {description}</b>\n"]
@@ -181,21 +194,28 @@ def main():
 
     changed = (indicator != prev_indicator) or (incident_ids != prev_incident_ids)
 
+    # Filter incidents based on FILTER_KEYWORDS
+    filtered_incidents = [i for i in incidents if not incident_filtered(i.get("name", ""))]
+    filtered_out = len(incidents) - len(filtered_incidents)
+
     if changed:
         if indicator == "none" and not incidents:
             if alerted:
                 log("RECOVERY: All systems operational")
                 send_telegram("✅ <b>Anthropic — All Systems Operational</b>\n\nIncident resolved. We're back to normal.")
             state["alerted"] = False
-        else:
-            log(f"INCIDENT [{indicator}]: {description} | incidents: {[i['name'] for i in incidents]}")
-            msg = format_incident_alert(incidents, components, indicator, description)
+        elif filtered_incidents:
+            log(f"INCIDENT [{indicator}]: {description} | incidents: {[i['name'] for i in filtered_incidents]}")
+            msg = format_incident_alert(filtered_incidents, components, indicator, description)
             send_telegram(msg)
             state["alerted"] = True
+        elif filtered_out > 0:
+            log(f"INCIDENT [{indicator}]: {description} | {filtered_out} incidents filtered out")
+            # Don't alert - incidents were filtered
 
     state["indicator"] = indicator
-    state["incident_ids"] = incident_ids
-    log(f"OK: indicator={indicator} incidents={len(incidents)} changed={changed}")
+    state["incident_ids"] = incident_ids  # Track all incidents for change detection
+    log(f"OK: indicator={indicator} incidents={len(incidents)} filtered={filtered_out} changed={changed}")
     save_state(state)
 
 

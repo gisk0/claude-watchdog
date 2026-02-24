@@ -79,6 +79,7 @@ PROBE_AGENT_ID=main
 | `MONITOR_MODEL` | `sonnet` | Model name to match in status incidents (e.g. "sonnet", "haiku") |
 | `PROBE_MODEL` | `openclaw` | Model alias sent to the gateway for latency probes. `openclaw` uses the gateway's default model routing |
 | `PROBE_AGENT_ID` | `main` | Value of the `x-openclaw-agent-id` header sent with probes |
+| `FILTER_KEYWORDS` | *(none)* | Comma-separated keywords to filter out of status alerts (e.g. "skills,Artifacts,Memory"). Empty = receive all alerts |
 
 Scripts also accept these as environment variables (env file takes priority).
 
