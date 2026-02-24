@@ -17,6 +17,7 @@ import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # ── config ────────────────────────────────────────────────────────────────────
@@ -30,8 +31,16 @@ PROBE_TIMEOUT = 45
 BASELINE_MIN_SAMPLES = 5
 BASELINE_WINDOW = 20
 ALERT_MULTIPLIER = 2.5
-ALERT_HARD_FLOOR = 10.0
+ALERT_HARD_FLOOR = 15.0  # Only alert on latency >15s or 2.5× baseline (was 10s)
 RECOVER_MULTIPLIER = 1.5
+RECOVER_STABLE_COUNT = 2  # Require 2 consecutive readings below threshold before recovery alert
+
+# Quiet hours: only alert between QUIET_START and QUIET_END (Berlin time)
+# Set to None to disable quiet hours
+QUIET_HOURS_ENABLED = True
+QUIET_START_HOUR = 9   # 9 AM Berlin
+QUIET_END_HOUR = 21    # 9 PM Berlin
+QUIET_TIMEZONE = "Europe/Berlin"
 
 
 def load_config() -> dict:
@@ -101,12 +110,30 @@ def send_telegram(msg: str):
         log(f"Telegram send failed: {e}")
 
 
+def should_suppress_alerts() -> bool:
+    """Check if current time is within quiet hours (off-work hours).
+    
+    Returns True when we should suppress alerts (outside work hours).
+    Returns False during work hours (alerts allowed).
+    """
+    if not QUIET_HOURS_ENABLED:
+        return False
+    try:
+        berlin_tz = ZoneInfo(QUIET_TIMEZONE)
+        now_berlin = datetime.now(berlin_tz)
+        hour = now_berlin.hour
+        # Suppress alerts outside work hours: before QUIET_START or after QUIET_END
+        return not (QUIET_START_HOUR <= hour < QUIET_END_HOUR)
+    except Exception:
+        return False  # Fail open - allow alerts if timezone fails
+
+
 def load_state() -> dict:
     try:
         with open(STATE_FILE) as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"samples": [], "alerted": False, "alert_latency": None}
+        return {"samples": [], "alerted": False, "alert_latency": None, "recovery_stable_count": 0}
 
 
 def save_state(state: dict):
@@ -187,6 +214,15 @@ def main():
 
     log(f"baseline_median={baseline:.2f}s threshold={threshold:.2f}s alerted={alerted}")
 
+    # Check quiet hours - suppress alerts during off-hours
+    if should_suppress_alerts():
+        log(f"Quiet hours active ({QUIET_START_HOUR}:00-{QUIET_END_HOUR}:00 Berlin) - suppressing alerts")
+        save_state(state)
+        return
+
+    # Track recovery stability
+    recovery_stable_count = state.get("recovery_stable_count", 0)
+
     if latency > threshold and status == "ok" and not alerted:
         ratio = latency / baseline
         if ratio > 5 or latency > 20:
@@ -208,16 +244,23 @@ def main():
         log(f"ALERT sent: {latency:.2f}s vs baseline {baseline:.2f}s ({ratio:.1f}×)")
 
     elif alerted and latency < recover_threshold:
-        msg = (
-            f"✅ <b>Anthropic API — Latency Back to Normal</b>\n\n"
-            f"Current: <b>{latency:.1f}s</b>\n"
-            f"Baseline: {baseline:.1f}s\n"
-            f"Was: {alert_latency:.1f}s when alert fired"
-        )
-        send_telegram(msg)
-        state["alerted"] = False
-        state["alert_latency"] = None
-        log(f"RECOVERY: {latency:.2f}s back below {recover_threshold:.2f}s")
+        # Require stable recovery (2 consecutive readings below threshold)
+        recovery_stable_count += 1
+        state["recovery_stable_count"] = recovery_stable_count
+        if recovery_stable_count >= RECOVER_STABLE_COUNT:
+            msg = (
+                f"✅ <b>Anthropic API — Latency Back to Normal</b>\n\n"
+                f"Current: <b>{latency:.1f}s</b>\n"
+                f"Baseline: {baseline:.1f}s\n"
+                f"Was: {alert_latency:.1f}s when alert fired"
+            )
+            send_telegram(msg)
+            state["alerted"] = False
+            state["alert_latency"] = None
+            state["recovery_stable_count"] = 0
+            log(f"RECOVERY: {latency:.2f}s back below {recover_threshold:.2f}s (stable after {RECOVER_STABLE_COUNT} reads)")
+        else:
+            log(f"Recovery pending: {recovery_stable_count}/{RECOVER_STABLE_COUNT} stable readings")
 
     state["last_check"] = datetime.now(timezone.utc).isoformat()
     state["last_latency"] = round(latency, 3)
