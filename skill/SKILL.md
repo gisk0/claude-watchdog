@@ -7,8 +7,20 @@ metadata:
     emoji: "🐕"
     requires:
       bins: [python3, crontab, curl]
-      env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPENCLAW_GATEWAY_TOKEN]
+      env:
+        - TELEGRAM_BOT_TOKEN
+        - TELEGRAM_CHAT_ID
+        - TELEGRAM_TOPIC_ID
+        - OPENCLAW_GATEWAY_TOKEN
+        - OPENCLAW_GATEWAY_PORT
+        - MONITOR_MODEL
+        - PROBE_MODEL
+        - PROBE_AGENT_ID
     primaryEnv: TELEGRAM_BOT_TOKEN
+    setup:
+      script: scripts/setup.sh
+      interactive: true
+      validates: TELEGRAM_BOT_TOKEN
 ---
 
 # Claude Watchdog 🐕
