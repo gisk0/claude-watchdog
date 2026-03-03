@@ -30,6 +30,7 @@ Monitor the Anthropic/Claude API for outages and latency spikes. Sends rich aler
 ## What It Does
 
 ### Status Monitor (`status-check.py`)
+
 - Polls `status.claude.com` every 15 minutes via cron
 - Alerts with incident name, latest update text, per-component status
 - Tags incidents as "(not our model)" if e.g. Haiku is affected but you use Sonnet
@@ -37,6 +38,7 @@ Monitor the Anthropic/Claude API for outages and latency spikes. Sends rich aler
 - **Zero token cost**
 
 ### Latency Probe (`latency-probe.py`)
+
 - Sends a minimal request through OpenClaw's local gateway every 15 minutes
 - Measures real end-to-end latency to Anthropic API
 - Maintains rolling baseline (median of last 20 samples)
@@ -53,17 +55,21 @@ bash /path/to/skills/claude-watchdog/scripts/setup.sh
 ```
 
 You'll need:
+
 1. **Telegram Bot Token** — from [@BotFather](https://t.me/BotFather)
 2. **Telegram Chat ID** — send a message to your bot, then check `https://api.telegram.org/bot<TOKEN>/getUpdates`
 3. **OpenClaw Gateway Token** — run:
+
    ```bash
    python3 -c "from pathlib import Path; import json; print(json.load(open(Path.home() / '.openclaw/openclaw.json'))['gateway']['auth']['token'])"
    ```
+
 4. **Gateway Port** — default `18789`
 
 The setup script writes config, installs cron jobs, and runs an initial check.
 
 To uninstall (removes cron jobs, optionally config/state):
+
 ```bash
 bash /path/to/skills/claude-watchdog/scripts/setup.sh --uninstall
 ```
@@ -72,7 +78,7 @@ bash /path/to/skills/claude-watchdog/scripts/setup.sh --uninstall
 
 Stored in `~/.openclaw/skills/claude-watchdog/claude-watchdog.env`. To reconfigure, either re-run `setup.sh` or edit this file directly — changes take effect on the next cron run (within 15 minutes).
 
-```
+```text
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 OPENCLAW_GATEWAY_TOKEN=...
@@ -106,7 +112,8 @@ chmod 600 ~/.openclaw/skills/claude-watchdog/claude-watchdog.env
 ## Alert Examples
 
 **Status incident:**
-```
+
+```text
 🟠 Anthropic Status: Partially Degraded Service
 
 📌 Elevated error rates on Claude 3.5 Haiku (not our model)
@@ -120,7 +127,8 @@ Components:
 ```
 
 **Latency spike:**
-```
+
+```text
 🟡 Anthropic API — High Latency Detected
 
 Current: 12.3s
@@ -131,7 +139,8 @@ Slow responses are expected right now.
 ```
 
 **Recovery:**
-```
+
+```text
 ✅ Anthropic API — Latency Back to Normal
 
 Current: 2.8s

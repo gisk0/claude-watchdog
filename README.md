@@ -7,7 +7,8 @@ An OpenClaw skill that monitors the Claude API for outages and latency spikes, s
 ## What You Get
 
 **Status alerts** when Anthropic reports incidents:
-```
+
+```text
 🟠 Anthropic Status: Partially Degraded Service
 
 📌 Elevated error rates on Claude 3.5 Sonnet (⚠️ affects us)
@@ -21,7 +22,9 @@ Components:
 ```
 
 **Latency spike detection** with severity levels:
-```
+
+```text
+
 🟡 Anthropic API — High Latency Detected
 
 Current: 12.3s
@@ -30,8 +33,10 @@ Ratio: 4.0×
 ```
 
 **Recovery notifications** so you know when it's safe to go back:
-```
+
+```text
 ✅ Anthropic API — Latency Back to Normal
+
 
 Current: 2.8s
 Baseline: 3.1s
@@ -72,7 +77,7 @@ The interactive setup walks you through connecting your Telegram bot and OpenCla
 
 ## How It Works
 
-```
+```text
 ┌─────────────┐    every 15 min    ┌──────────────────────┐
 │  cron job    │──────────────────▶│  status-check.py     │
 │              │                   │  • polls status.claude│
